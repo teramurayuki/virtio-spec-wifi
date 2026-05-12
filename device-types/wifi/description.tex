@@ -1,0 +1,477 @@
+\section{802.11 Device}\label{sec:Device Types / 802.11 Device}
+
+% TODO: add list with field explanations for every embedded struct
+% TODO: improve wording for "X bytes follow" when commands/events have trailing IE/key etc data
+% TODO: add citations for 802.11 and 802.3 definitions
+% TODO: normative statements
+% TODO: add non-normative paragraph that explains how both FullMAC and SoftMAC can work with this device spec.
+
+The 802.11 device supports the transmission and reception of 802.11 frames.
+It includes additional functionality to support Station Mode workflows such as authentication.
+
+\subsection{Device ID}\label{sec:Device Types / 802.11 Device / Device ID}
+
+10
+
+\subsection{Virtqueues}\label{sec:Device Types / 802.11 Device / Virtqueues}
+
+\begin{description}
+\item[0] controlq
+\item[1] eventq
+\item[2] txq
+\item[3] rxq
+\end{description}
+
+The driver enqueues control requests to the controlq to change or query configuration.
+
+The device enqueues events (such as scan results) to the eventq.
+
+TODO: normative statement, driver MUST populate rxq and eventq with appropriately large buffers on initialization.
+
+\subsection{Feature bits}\label{sec:Device Types / 802.11 Device / Feature bits}
+
+None.
+
+\subsection{Device configuration layout}\label{sec:Device Types / 802.11 Device / Device configuration layout}
+
+\begin{lstlisting}
+struct virtio_wifi_config {
+        /* # of available phys */
+        le32 phys;
+};
+\end{lstlisting}
+
+\subsection{Device Initialization}\label{sec:Device Types / 802.11 Device / Device Initialization}
+
+The device determines the number of physical wireless devices.
+
+The driver populates rxq and eventq with appropriately large buffers.
+
+The driver queries the available phys with VIRTIO_WIFI_CMD_GET_WIPHY.
+
+\subsection{Device Operation}\label{sec:Device Types / 802.11 Device / Device Operation}
+
+The driver makes a request available in the controlq. The device fills
+in the response and uses the buffer. The controlq uses common request
+and response headers.
+
+\begin{lstlisting}
+enum {
+	VIRTIO_WIFI_CMD_INVALID = 0,
+	VIRTIO_WIFI_CMD_GET_WIPHY = 1,
+	VIRTIO_WIFI_CMD_NEW_INTERFACE,
+	VIRTIO_WIFI_CMD_DELETE_INTERFACE,
+	VIRTIO_WIFI_CMD_GET_BAND,
+	VIRTIO_WIFI_CMD_GET_BAND_CHANNEL,
+	VIRTIO_WIFI_CMD_GET_BAND_BITRATE,
+	VIRTIO_WIFI_CMD_GET_CIPHERSUITES,
+	VIRTIO_WIFI_CMD_TRIGGER_SCAN,
+	VIRTIO_WIFI_CMD_CONNECT,
+	VIRTIO_WIFI_CMD_AUTHENTICATE,
+	VIRTIO_WIFI_CMD_ASSOCIATE,
+	VIRTIO_WIFI_CMD_DEAUTHENTICATE,
+	VIRTIO_WIFI_CMD_DISASSOCIATE,
+	VIRTIO_WIFI_CMD_ADD_KEY,
+	VIRTIO_WIFI_CMD_SET_KEY,
+	VIRTIO_WIFI_CMD_DEL_KEY,
+	VIRTIO_WIFI_CMD_SET_STATION,
+
+	/* common status codes */
+	VIRTIO_WIFI_S_OK = 0x8000,
+	VIRTIO_WIFI_S_BAD_MSG,
+	VIRTIO_WIFI_S_NOT_SUPP,
+	VIRTIO_WIFI_S_IO_ERR
+};
+
+/* common request and response header */
+struct virtio_wifi_hdr {
+	__le32 code;
+	__le32 index;
+};
+\end{lstlisting}
+
+The \field{code} field identifies the command type.
+
+The optional \field{index} field indicates what phy or interface index a
+command refers to.
+
+In a response, if \field{code} is not VIRTIO_WIFI_S_OK, the value of other response
+fields is undefined.
+
+\drivernormative{\subsubsection}{Device Operation}{Device Types / 802.11 Device / Device Operation}
+
+The driver MUST interpret response fields other than the \field{struct
+virtio_wifi_hdr} field \field{code} only when \field{code} is
+VIRTIO_WIFI_S_OK.
+
+The driver MUST allocate enough space for the response in a
+device-writable controlq buffer.
+
+\devicenormative{\subsubsection}{Device Operation}{Device Types / 802.11 Device / Device Operation}
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to VIRTIO_WIFI_S_OK if the device successfully
+executed the request.
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to a status other than VIRTIO_WIFI_S_OK if the
+device did not successfully execute the request.
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to VIRTIO_WIFI_S_EOPNOTSUPP if the device could not
+execute the specific request due to an implementation limitation.
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to VIRTIO_WIFI_S_EOPNOTSUPP for a request with a
+value of the request \field{code} field which is not described in this
+specification.
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to VIRTIO_WIFI_S_ENODEV if the \field{index}
+field value supplied with the request does not identify a phy or an interface.
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to VIRTIO_WIFI_S_EINVAL if the request values are
+inconsistent with the specification and if the inconsistence is not
+described by the requirements which stipulate status
+VIRTIO_WIFI_S_EOPNOTSUPP or VIRTIO_WIFI_S_ENODEV.
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to VIRTIO_WIFI_S_EINVAL if the request specified in
+the request header through the \field{code} field does not fit into
+the device read-only buffer.
+
+For \field{struct virtio_wifi_hdr}, the device MUST set the
+\field{code} field to VIRTIO_WIFI_S_EINVAL if the response specified in
+the request header through the \field{code} field does not fit into
+the device write-only buffer, unless the \field{code} field does not
+fit into the device write-only buffer.
+
+For \field{struct virtio_wifi_hdr}, the device MUST NOT set the
+\field{code} field if the \field{code} field does not fit into the
+device write-only buffer.
+
+If the device read-only buffer is bigger than the size of the request
+specified in the request header, the device MUST ignore the additional
+space.
+
+If the device write-only buffer is bigger than the size of the response
+corresponding to the request header, the device MUST ignore the
+additional space.
+
+The device MUST set \emph{reserved} fields in a device-writable buffer
+to zero.
+
+The device MUST NOT set bits in \emph{flags} fields in a device-writable
+buffer which are not allowed according to the negotiated features.
+
+\subsubsection{Common Definitions}\label{sec:Device Types / 802.11 Device / Device Operation / Common Definitions}
+
+This section makes common definitions.
+
+\paragraph{Interface Types Types}\label{sec:Device Types / 802.11 Device / Device Operation / Common Definitions / Interface Types}
+
+The following interface types are defined:
+
+\begin{lstlisting}
+enum virtio_wifi_iftype {
+	VIRTIO_WIFI_IFTYPE_UNSPECIFIED = 0,
+	VIRTIO_WIFI_IFTYPE_ADHOC,
+	VIRTIO_WIFI_IFTYPE_STATION,
+	VIRTIO_WIFI_IFTYPE_AP,
+	VIRTIO_WIFI_IFTYPE_AP_VLAN,
+	VIRTIO_WIFI_IFTYPE_WDS,
+	VIRTIO_WIFI_IFTYPE_MONITOR,
+	VIRTIO_WIFI_IFTYPE_MESH_POINT,
+	VIRTIO_WIFI_IFTYPE_P2P_CLIENT,
+	VIRTIO_WIFI_IFTYPE_P2P_GO,
+	VIRTIO_WIFI_IFTYPE_P2P_DEVICE,
+	VIRTIO_WIFI_IFTYPE_OCB,
+	VIRTIO_WIFI_IFTYPE_NAN,
+	VIRTIO_WIFI_IFTYPE_MAX,
+};
+\end{lstlisting}
+
+The following definition dictates the address byte length:
+
+\begin{lstlisting}
+#define ETH_ALEN 6 /* Octets in one ethernet addr	 */
+\end{lstlisting}
+
+The following definition dictates the maximum allowed SSID length:
+
+\begin{lstlisting}
+#define IEEE80211_MAX_SSID_LEN 32
+\end{lstlisting}
+
+\paragraph{Deauthentication And Disassociation types}\label{sec:Device Types / 802.11 Device / Device Operation / Common Definitions / Deauthentication And Disassociation types}
+
+\begin{lstlisting}
+/* Used both for deauth and disassoc */
+struct virtio_wifi_disconnect_request {
+	struct virtio_wifi_hdr hdr;
+	__u8 mac[ETH_ALEN];
+	__le16 reason_code;
+	__le64 ie_len;
+	__u8 local_state_change;
+	__u8 padding[7];
+};
+\end{lstlisting}
+
+If \field{ie_len} is non-zero, \field{ie_len} bytes follow.
+
+\subsubsection{Events}\label{sec:sec:Device Types / 802.11 Device / Device Operation / Events}
+
+\begin{lstlisting}
+enum virtio_wifi_event_code {
+	VIRTIO_WIFI_EVENT_CODE_INVALID = 0,
+	VIRTIO_WIFI_EVENT_CODE_SCAN_RESULT,
+	VIRTIO_WIFI_EVENT_CODE_END_SCAN,
+	VIRTIO_WIFI_EVENT_CODE_CANCEL_SCAN,
+	VIRTIO_WIFI_EVENT_CODE_AUTHENTICATE,
+	VIRTIO_WIFI_EVENT_CODE_AUTHENTICATE_TIMED_OUT,
+	VIRTIO_WIFI_EVENT_CODE_ASSOCIATE,
+	VIRTIO_WIFI_EVENT_CODE_ASSOCIATE_TIMED_OUT,
+	VIRTIO_WIFI_EVENT_CODE_CONNECT,
+	VIRTIO_WIFI_EVENT_CODE_DISCONNECT,
+	VIRTIO_WIFI_EVENT_CODE_DISASSOCIATE,
+	VIRTIO_WIFI_EVENT_CODE_DEAUTHENTICATE,
+};
+
+struct virtio_wifi_event {
+	__le32 code;
+	__le32 ifindex;
+};
+\end{lstlisting}
+
+
+\paragraph{Scan Result Event}\label{sec:sec:Device Types / 802.11 Device / Device Operation / Events / Scan Result}
+
+\begin{lstlisting}
+struct virtio_wifi_scan_result {
+	struct virtio_wifi_event hdr;
+	/* the TSF sent by the peer in the beacon/probe response (or 0) */
+	__le64 tsf;
+	/* frame type (if known) enum cfg80211_bss_frame_type */
+	__le32 ftype;
+	/* the capability field sent by the peer */
+	__le16 capability;
+	/* the beacon interval announced by the peer */
+	__le16 beacon_interval;
+	__le32 band;
+	__le32 center_freq;
+	__le16 hw_value;
+	__u8 bssid[ETH_ALEN];
+	__le32 padding;
+	__le32 signal;
+	/* length of the additional IEs */
+	__le64 ielen;
+};
+\end{lstlisting}
+
+If \field{ielen} is non-zero, followed by \field{ielen} bytes that include the Information Element (IE) data.
+
+\paragraph{End Scan Event}\label{sec:sec:Device Types / 802.11 Device / Device Operation / Events / End Scan}
+
+No payload.
+
+\paragraph{Cancel Scan Event}\label{sec:sec:Device Types / 802.11 Device / Device Operation / Events / Cancel Scan}
+
+No payload.
+
+\subsubsection{PHY Management}\label{sec:Device Types / 802.11 Device / Device Operation / PHY Management}
+
+VIRTIO_WIFI_CMD_GET_BAND
+VIRTIO_WIFI_CMD_GET_BAND_CHANNEL
+VIRTIO_WIFI_CMD_GET_BAND_BITRATE
+VIRTIO_WIFI_CMD_GET_CIPHERSUITES
+
+TODO
+
+\subsubsection{Creating Interfaces}\label{sec:Device Types / 802.11 Device / Device Operation / Creating Interfaces}
+
+Use VIRTIO_WIFI_CMD_NEW_INTERFACE.
+TODO
+
+\subsubsection{Deleting Interfaces}\label{sec:Device Types / 802.11 Device / Device Operation / Deleting Interfaces}
+
+Use VIRTIO_WIFI_CMD_DELETE_INTERFACE. TODO
+
+\subsubsection{Triggering A Scan}\label{sec:Device Types / 802.11 Device / Device Operation / Scan}
+
+Scanning is an asynchronous operation: the driver requests a scan, and the device replies with VIRTIO_WIFI_EVENT_CODE_SCAN_RESULT events each with a scan result, and concludes the scan with VIRTIO_WIFI_EVENT_CODE_END_SCAN event for a successful scan or VIRTIO_WIFI_EVENT_CODE_CANCEL_SCAN to signify failure.
+
+The driver begins a scan by sending a \field{struct virtio_wifi_hdr} with \field{code} set to  VIRTIO_WIFI_CMD_TRIGGER_SCAN and \field{index} to the interface that wants to perform the scan. The device responds with VIRTIO_WIFI_S_OK if it has accepted the operation.
+
+For each scan result, the device notifies the driver with an asynchronous event with \field{code} as VIRTIO_WIFI_EVENT_CODE_SCAN_RESULT and \field{index} set to the interface index.
+
+The full event type is:
+
+\begin{lstlisting}
+struct virtio_wifi_scan_result {
+	struct virtio_wifi_event hdr;
+	/* @tsf: the TSF sent by the peer in the beacon/probe response (or 0) */
+	__le64 tsf;
+	/* frame type (if known) enum cfg80211_bss_frame_type */
+	__le32 ftype;
+	/* @capability: the capability field sent by the peer */
+	__le16 capability;
+	/* the beacon interval announced by the peer */
+	__le16 beacon_interval;
+	__le32 band;
+	__le32 center_freq;
+	__le32 freq_offset;
+	__le16 hw_value;
+	__u8 bssid[ETH_ALEN];
+	__le32 signal;
+	/* ielen: length of the additional IEs */
+	__le64 ielen;
+};
+\end{lstlisting}
+
+If \field{ielen} is non-zero, followed by \field{ielen} bytes that include the Information Element (IE) data.
+
+\subsubsection{Association}\label{sec:Device Types / 802.11 Device / Device Operation / Association}
+
+The driver sends a \field{struct virtio_wifi_association_request} with the header \field{code} set to VIRTIO_WIFI_CMD_ASSOCIATION and the header \field{index} set to the interface index.
+
+The device responds with VIRTIO_WIFI_S_OK if it has accepted the operation.
+
+\begin{lstlisting}
+struct virtio_wifi_association_request {
+	struct virtio_wifi_event hdr;
+	__u8 mac[ETH_ALEN];
+	__le16 ssid_len;
+	__u8 ssid[IEEE80211_MAX_SSID_LEN];
+	__le32 freq;
+	__le32 freq_offset;
+	__le32 wpa_versions;
+	__le32 cipher_group;
+	__le32 n_ciphers_pairwise;
+#define MAX_NR_CIPHER_SUITES 5
+	__le32 ciphers_pairwise[MAX_NR_CIPHER_SUITES];
+	__le32 n_akm_suites;
+#define MAX_NUM_AKM_SUITES 10
+	__le32 akm_suites[MAX_NUM_AKM_SUITES];
+	__le32 padding0;
+	/* ielen: length of the additional IEs */
+	__le64 ielen;
+};
+\end{lstlisting}
+
+If \field{ielen} is non-zero, followed by \field{ielen} bytes that include the Information Element (IE) data.
+
+The device responds with asynchronous VIRTIO_WIFI_EVENT_CODE_ASSOCIATE or
+	VIRTIO_WIFI_EVENT_CODE_ASSOCIATE_TIMED_OUT events.
+
+The VIRTIO_WIFI_EVENT_CODE_ASSOCIATE event has the type:
+
+\begin{lstlisting}
+struct virtio_wifi_association_response {
+	struct virtio_wifi_event hdr;
+	__le64 frame_len;
+	__le64 req_ies_len;
+	__le32 uapsd_queues;
+	__le32 padding0;
+};
+\end{lstlisting}
+
+If \field{frame_len} is non-zero, \field{frame_len} bytes follow.
+
+If \field{req_ies_len} is non-zero, \field{req_ies_len} bytes follow.
+
+To disassociate, the driver sends a \field{struct virtio_wifi_disconnect_request} with \field{code} set to VIRTIO_WIFI_CMD_DISASSOCIATE.
+
+The device sends an asynchronous VIRTIO_WIFI_EVENT_CODE_DISASSOCIATE event whenever a disassociation happens.
+
+\subsubsection{Authentication}\label{sec:Device Types / 802.11 Device / Device Operation / Authentication}
+
+The driver sends a \field{struct virtio_wifi_authentication_request} with the header \field{code} set to VIRTIO_WIFI_CMD_AUTHENTICATE and the header \field{index} set to the interface index.
+
+The device responds with VIRTIO_WIFI_S_OK if it has accepted the operation.
+
+\begin{lstlisting}
+struct virtio_wifi_authentication_request {
+	struct virtio_wifi_event hdr;
+	__u8 mac[ETH_ALEN];
+	__le16 reserved0;
+	__le32 auth_type;
+	__le32 freq;
+	__le32 freq_offset;
+	__le16 ssid_len;
+	__u8 ssid[IEEE80211_MAX_SSID_LEN];
+	__le16 reserved1;
+	/* ielen: length of the additional IEs */
+	__le64 ielen;
+};
+\end{lstlisting}
+
+If \field{ielen} is non-zero, followed by \field{ielen} bytes that include the Information Element (IE) data.
+
+The device responds with asynchronous VIRTIO_WIFI_EVENT_CODE_AUTHENTICATE or
+	VIRTIO_WIFI_EVENT_CODE_AUTHENTICATE_TIMED_OUT events.
+
+To deauthenticate, the driver sends a \field{struct virtio_wifi_disconnect_request} with \field{code} set to VIRTIO_WIFI_CMD_DEAUTHENTICATE.
+
+The device sends an asynchronous VIRTIO_WIFI_EVENT_CODE_DEAUTHENTICATE event whenever a deauthentication happens.
+
+\subsubsection{Connection}\label{sec:Device Types / 802.11 Device / Device Operation / Connection}
+
+The device notifies the driver with asynchronous VIRTIO_WIFI_EVENT_CODE_CONNECT or
+	VIRTIO_WIFI_EVENT_CODE_DISCONNECT events when a connection change happens.
+
+\begin{lstlisting}
+struct virtio_wifi_connection_response {
+	struct virtio_wifi_event hdr;
+	__u8 mac[ETH_ALEN];
+	__le16 status_code;
+	__le64 req_ie_len;
+	__le64 resp_ie_len;
+};
+\end{lstlisting}
+
+If \field{req_ie_len} is non-zero, \field{req_ie_len} bytes follow.
+If \field{resp_ie_len} is non-zero, \field{resp_ie_len} bytes follow.
+
+\begin{lstlisting}
+struct virtio_wifi_disconnection_response {
+	struct virtio_wifi_event hdr;
+	__le16 reason_code;
+	__u8 disconnected_by_ap;
+	__u8 padding;
+};
+\end{lstlisting}
+
+\subsubsection{Key Management}\label{sec:Device Types / 802.11 Device / Device Operation / Key Management}
+
+TODO VIRTIO_WIFI_CMD_ADD_KEY,
+	VIRTIO_WIFI_CMD_SET_KEY,
+	VIRTIO_WIFI_CMD_DEL_KEY,
+
+\begin{lstlisting}
+struct virtio_wifi_key {
+	struct virtio_wifi_hdr hdr;
+	__u8 key_index;
+	__u8 pairwise;
+	__u8 mac[ETH_ALEN];
+	__le16 vlan_id;
+	__u8 unicast;
+	__u8 multicast;
+	__le32 cipher;
+	__le32 key_len;
+	__le32 seq_len;
+	/* see enum nl80211_key_mode */
+	__le32 mode;
+};
+\end{lstlisting}
+
+\field{key_len} bytes follow.
+\field{seq_len} bytes follow.
+
+\subsubsection{Sending Packets (TX)}\label{sec:Device Types / 802.11 Device / Device Operation / Packet TX}
+
+The driver writes a \field{struct virtio_wifi_hdr} with the \field{index} set to the interface of the packet, followed by the packet data.
+
+\subsubsection{Receiving Packets (RX)}\label{sec:Device Types / 802.11 Device / Device Operation / Packet RX}
+
+The driver reads a \field{struct virtio_wifi_hdr} with the \field{index} set to the interface of the packet, followed by the packet data.
